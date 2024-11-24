@@ -436,5 +436,5 @@ def update_animated_chart(selected_geo_layer, selected_indicator):
     fig.update_layout(legend_title=dict(text='Type'))
     return fig
 
-#if __name__ == '__main__':
-    #app.run_server(debug=True)
+if __name__ == '__main__':
+  app.run_server(debug=True)
