@@ -1,4 +1,3 @@
-
 #This part is code for visualization with dropdown component
 #Chart including:
 #1.Time-series plots to show trends in bookings over months;
@@ -7,29 +6,22 @@
 #4.Heatmaps to visualize the concentration of short-stay accommodations by region;
 #5.Top 10 popular destination analysis by mutiple geo layer;
 #6.Animations to show changes over time.
-import pandas as pd  # Import pandas for data manipulation
-import plotly.express as px  # Import Plotly for visualizations
-import dash  # Import Dash framework
+
+import dash
 from dash import dcc, html
-
 from dash.dependencies import Input, Output
-import json  # For working with GeoJSON files
+from sklearn.ensemble import RandomForestRegressor
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import json
 
-# Load your data
 summary_df = pd.read_csv('data/dataset.csv')  # Replace with the actual path to your summary data file
 long_df = pd.read_csv('data/long_df_flask.csv')  # Replace with the actual path to your detailed data file
 
 # Load GeoJSON data
 with open('data/NUTS_RG_60M_2024_4326.geojson') as f:
     nuts_geojson = json.load(f)
-
-import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output
-import pandas as pd
-import plotly.express as px
-import json
-
 # Convert the month column to a category type and specify the order of the categories
 month_order = [f"M{str(i).zfill(2)}" for i in range(1, 13)]
 summary_df['month'] = pd.Categorical(summary_df['month'], categories=month_order, ordered=True)
@@ -222,7 +214,236 @@ app.layout = html.Div([
         placeholder="Select Indicator"
     ),
     dcc.Graph(id='animated_chart'),  # Graph for animated changes over time
+    html.H2("'Length of Stay' indicator Prediction"),
+    html.Button('Forcast Length of Stay', id='predictLSTY-button', n_clicks=1),
+    dcc.Graph(id='predictionLSTY-graph'),
+    html.H2("'Stay' Indicator Prediction"),
+    html.Button('Forcast Stay', id='predictSTY-button', n_clicks=1),
+    dcc.Graph(id='predictionSTY-graph'),    
+    html.H2("'Night Spent' Indicator Prediction"),
+    html.Button('Forcast Night Spent', id='predictN-button', n_clicks=1),
+    dcc.Graph(id='predictionN-graph'),     
 ])
+
+#This part is code for prediction of tourism indicator "LSTY" by country level.
+#Model is random forest regression
+@app.callback(
+    Output('predictionLSTY-graph', 'figure'),
+    Input('predictLSTY-button', 'n_clicks')
+)
+def predict_LSTY(n_clicks):
+    if n_clicks > 0:
+        # Data pre-processing
+        LSTY_summary_df = long_df.groupby(['month', 'indic_to', 'geo_layer', 'Year']).agg({'Value': 'sum'}).reset_index()
+        LSTY_summary_df = LSTY_summary_df[LSTY_summary_df['indic_to'] == 'LSTY']
+        LSTY_summary_df = LSTY_summary_df[LSTY_summary_df['geo_layer'] == 'Country']
+        LSTY_summary_df.drop(columns=['indic_to', 'geo_layer'], errors='ignore', inplace=True)
+
+        # Data pre-processing
+        LSTY_summary_df['month_num'] = LSTY_summary_df['month'].apply(lambda x: int(x[1:]))  # 从 'M01' 转换为 1
+        LSTY_summary_df['time'] = LSTY_summary_df['Year'].astype(str) + (LSTY_summary_df['month_num'] / 12.0).astype(str)  # 创建时间特征
+        
+        # Prepare input features and target values
+        X = LSTY_summary_df[['Year', 'month_num']]
+        y = LSTY_summary_df['Value']
+
+        # Train the random forest model
+        model = RandomForestRegressor(n_estimators=100)
+        model.fit(X, y)
+
+        # Create 2024 data
+        future_year = 2024
+        future_months = np.arange(1, 13)  #format transfer
+        future_data = pd.DataFrame({'Year': future_year, 'month_num': future_months})
+
+        # Make projections
+        future_data['Predicted_Value'] = model.predict(future_data)
+
+        # Visualization results
+        combined_data = pd.concat([LSTY_summary_df, future_data[['Year', 'month_num', 'Predicted_Value']]], ignore_index=True)
+
+        # Create line graphs
+        fig = px.line(
+            combined_data,
+            x='month_num',
+            y='Predicted_Value' if 'Predicted_Value' in combined_data.columns else 'Value',
+            title='Predicted Total # Length of Stay per Month',
+            labels={'month_num': 'Month', 'Predicted_Value': 'Total # Length of Stay', 'Value': 'Total # Length of Stay'},
+            markers=True
+        )
+
+        # Generate month labels
+        month_labels = [f'M{str(i).zfill(2)}' for i in range(1, 13)]
+        # Set up custom x-axis scales and labels
+        fig.update_xaxes(
+            tickvals=np.arange(1, 13),
+            ticktext=month_labels,
+        )
+
+        # Display of historical and forecast data
+        fig.add_scatter(
+            x=LSTY_summary_df['month_num'],
+            y=LSTY_summary_df['Value'],
+            mode='lines+markers',
+            name='Historical Values',
+            line=dict(color='blue')
+        )
+
+        # Show projected data as new series
+        fig.add_scatter(
+            x=future_data['month_num'],
+            y=future_data['Predicted_Value'],
+            mode='lines+markers',
+            name='Predicted Values',
+            line=dict(color='orange')
+        )
+
+        return fig
+
+@app.callback(
+    Output('predictionSTY-graph', 'figure'),
+    Input('predictSTY-button', 'n_clicks')
+)
+def predict_STY(n_clicks):
+    if n_clicks > 0:
+        # Data pre-processing
+        STY_summary_df = long_df.groupby(['month', 'indic_to', 'geo_layer', 'Year']).agg({'Value': 'sum'}).reset_index()
+        STY_summary_df = STY_summary_df[STY_summary_df['indic_to'] == 'STY']
+        STY_summary_df = STY_summary_df[STY_summary_df['geo_layer'] == 'Country']
+        STY_summary_df.drop(columns=['indic_to', 'geo_layer'], errors='ignore', inplace=True)
+
+        # Data pre-processing
+        STY_summary_df['month_num'] = STY_summary_df['month'].apply(lambda x: int(x[1:]))  # 从 'M01' 转换为 1
+        STY_summary_df['time'] = STY_summary_df['Year'].astype(str) + (STY_summary_df['month_num'] / 12.0).astype(str)  # 创建时间特征
+        
+        # Prepare input features and target values
+        X = STY_summary_df[['Year', 'month_num']]
+        y = STY_summary_df['Value']
+
+        # Train the random forest model
+        model = RandomForestRegressor(n_estimators=100)
+        model.fit(X, y)
+
+        # Create 2024 data
+        future_year = 2024
+        future_months = np.arange(1, 13)  #format transfer
+        future_data = pd.DataFrame({'Year': future_year, 'month_num': future_months})
+
+        # Make projections
+        future_data['Predicted_Value'] = model.predict(future_data)
+
+        # Visualization results
+        combined_data = pd.concat([STY_summary_df, future_data[['Year', 'month_num', 'Predicted_Value']]], ignore_index=True)
+
+        # Create line graphs
+        fig = px.line(
+            combined_data,
+            x='month_num',
+            y='Predicted_Value' if 'Predicted_Value' in combined_data.columns else 'Value',
+            title='Predicted Total # Length of Stay per Month',
+            labels={'month_num': 'Month', 'Predicted_Value': 'Total # Length of Stay', 'Value': 'Total # Length of Stay'},
+            markers=True
+        )
+
+        # Generate month labels
+        month_labels = [f'M{str(i).zfill(2)}' for i in range(1, 13)]
+        # Set up custom x-axis scales and labels
+        fig.update_xaxes(
+            tickvals=np.arange(1, 13),
+            ticktext=month_labels,
+        )
+
+        # Display of historical and forecast data
+        fig.add_scatter(
+            x=STY_summary_df['month_num'],
+            y=STY_summary_df['Value'],
+            mode='lines+markers',
+            name='Historical Values',
+            line=dict(color='blue')
+        )
+
+        # Show projected data as new series
+        fig.add_scatter(
+            x=future_data['month_num'],
+            y=future_data['Predicted_Value'],
+            mode='lines+markers',
+            name='Predicted Values',
+            line=dict(color='orange')
+        )
+
+        return fig
+@app.callback(
+    Output('predictionN-graph', 'figure'),
+    Input('predictN-button', 'n_clicks')
+)
+def predict_NGT_SP(n_clicks):
+    if n_clicks > 0:
+        # Data pre-processing
+        NGT_SP_summary_df = long_df.groupby(['month', 'indic_to', 'geo_layer', 'Year']).agg({'Value': 'sum'}).reset_index()
+        NGT_SP_summary_df = NGT_SP_summary_df[NGT_SP_summary_df['indic_to'] == 'NGT_SP']
+        NGT_SP_summary_df = NGT_SP_summary_df[NGT_SP_summary_df['geo_layer'] == 'Country']
+        NGT_SP_summary_df.drop(columns=['indic_to', 'geo_layer'], errors='ignore', inplace=True)
+
+        # Data pre-processing
+        NGT_SP_summary_df['month_num'] = NGT_SP_summary_df['month'].apply(lambda x: int(x[1:]))  # 从 'M01' 转换为 1
+        NGT_SP_summary_df['time'] = NGT_SP_summary_df['Year'].astype(str) + (NGT_SP_summary_df['month_num'] / 12.0).astype(str)  # 创建时间特征
+        
+        # Prepare input features and target values
+        X = NGT_SP_summary_df[['Year', 'month_num']]
+        y = NGT_SP_summary_df['Value']
+
+        # Train the random forest model
+        model = RandomForestRegressor(n_estimators=100)
+        model.fit(X, y)
+
+        # Create 2024 data
+        future_year = 2024
+        future_months = np.arange(1, 13)  #format transfer
+        future_data = pd.DataFrame({'Year': future_year, 'month_num': future_months})
+
+        # Make projections
+        future_data['Predicted_Value'] = model.predict(future_data)
+
+        # Visualization results
+        combined_data = pd.concat([NGT_SP_summary_df, future_data[['Year', 'month_num', 'Predicted_Value']]], ignore_index=True)
+
+        # Create line graphs
+        fig = px.line(
+            combined_data,
+            x='month_num',
+            y='Predicted_Value' if 'Predicted_Value' in combined_data.columns else 'Value',
+            title='Predicted Total # Length of Stay per Month',
+            labels={'month_num': 'Month', 'Predicted_Value': 'Total # Length of Stay', 'Value': 'Total # Length of Stay'},
+            markers=True
+        )
+
+        # Generate month labels
+        month_labels = [f'M{str(i).zfill(2)}' for i in range(1, 13)]
+        # Set up custom x-axis scales and labels
+        fig.update_xaxes(
+            tickvals=np.arange(1, 13),
+            ticktext=month_labels,
+        )
+
+        # Display of historical and forecast data
+        fig.add_scatter(
+            x=NGT_SP_summary_df['month_num'],
+            y=NGT_SP_summary_df['Value'],
+            mode='lines+markers',
+            name='Historical Values',
+            line=dict(color='blue')
+        )
+
+        # Show projected data as new series
+        fig.add_scatter(
+            x=future_data['month_num'],
+            y=future_data['Predicted_Value'],
+            mode='lines+markers',
+            name='Predicted Values',
+            line=dict(color='orange')
+        )
+
+        return fig    
 @app.callback(
     Output('line-chart', 'figure'),
     [Input('geo_layer-dropdown', 'value'),
@@ -322,7 +543,9 @@ def update_pie_chart(selected_indicator, selected_geo_layer, selected_year, sele
 
     return pie_fig
 
-
+# Load GeoJSON files
+with open('data/NUTS_RG_60M_2024_4326.geojson') as f:
+    nuts_geojson = json.load(f)
 @app.callback(
     Output('geo_heatmap', 'figure'),
     [Input('heatmap_indic_to', 'value'),
@@ -437,4 +660,4 @@ def update_animated_chart(selected_geo_layer, selected_indicator):
     return fig
 
 if __name__ == '__main__':
-  app.run_server(debug=True)
+    app.run_server(debug=True)
