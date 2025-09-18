@@ -1,0 +1,44 @@
+name: Run Maestro Tests (Android)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  maestro:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Checkout your code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Install Java (needed for emulator + builds)
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      # 3. Install Maestro CLI
+      - name: Install Maestro
+        run: curl -Ls "https://get.maestro.mobile.dev" | bash
+
+      # 4. Start Android emulator
+      - name: Start emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_5
+          script: echo "Emulator ready!"
+
+      # 5. Install your APK (adjust path if needed)
+      - name: Install app on emulator
+        run: adb install -r app-debug.apk
+
+      # 6. Run Maestro flows
+      - name: Run Maestro tests
+        run: maestro test .maestro
+        
